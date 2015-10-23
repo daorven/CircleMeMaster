@@ -5,7 +5,8 @@
  
 require "Window"
 require "Apollo"
-require "ChatSystemLib"
+require "ICCommLib"
+require "ICComm"
 require "GuildLib"
 require "GuildTypeLib"
 require "ChatChannelLib"
@@ -29,7 +30,6 @@ function CircleMeMaster:new(o)
     self.__index = self 
 
     -- initialize variables here
-
     return o
 end
 
@@ -96,11 +96,11 @@ function CircleMeMaster:OnDocLoaded()
 		Apollo.RegisterSlashCommand("cmm", "OnCircleMeMasterOn", self)
 		Apollo.RegisterEventHandler("GuildRoster",           "OnGuildRoster", self)
 		Apollo.RegisterEventHandler("GuildMemberChange",     "OnGuildMemberChange", self)
-		Apollo.RegisterTimerHandler("CircleMeMaster_JoinGlobal", "JoinGlobalChannel", self)
 		
 		-- Channel Events
-		Apollo.RegisterEventHandler("CharacterCreated", "OnCharacterCreated", self)
-		Apollo.RegisterEventHandler("ReceivedMessageEvent","OnChannelMessageReceive",self)
+		Apollo.RegisterEventHandler("ReceivedMessageEvent","OnGlobalMessageReceived",self)
+		self.myTimer = ApolloTimer.Create(1, false, "Connect_Global", self) -- Rejoin if it cannot join channel
+		self.myTimer:Start()
 		
 		for _,guild in ipairs(GuildLib.GetGuilds()) do
 			guild:RequestMembers()
@@ -110,121 +110,6 @@ function CircleMeMaster:OnDocLoaded()
 	end
 end
 
--- Channel Functions 
-function CircleMeMaster:Connect()
-    if not self.global then
-        self.global = ICCommLib.JoinChannel("CircleMeMaster", ICCommLib.CodeEnumICCommChannelType.Global)
-    end
-
-    if self.global:IsReady() then
-        self.global:SetReceivedMessageFunction("OnICCommMessageReceived", self)
-        self.global:SetSendMessageResultFunction("OnICCommSendMessageResult", self)
-		self:DoCircleAnnounce()
-    else
-    	Apollo.CreateTimer("GlobalConnect", 3, false)
-    end
-end 
-
-function CircleMeMaster:JoinGlobalChannel()
-    local chatActive = false
-
-    for idx, channelCurrent in ipairs(ChatSystemLib.GetChannels()) do
-    	if channelCurrent:GetName() == "CircleMeMaster" then
-    		chatActive = true
-    		self.global = channelCurrent
-    	end
-    end
-
-    if not chatActive then
-    	ChatSystemLib.JoinChannel("CircleMeMaster")
-    end
-
-    if self.global then
-    	self:HideChannel(self.global:GetUniqueId())
-    else
-    	Apollo.CreateTimer("CircleMeMaster_JoinGlobal", 1, false)
-    end
-end
-
-function CircleMeMaster:OnGlobalMessage(message)
-	if not message or not message.action then
-		return
-	end
-
-	if message.action == "insert" then
-		self:AddCircle(message)
-	elseif message.action == "delete" then
-		self:RemoveCircle(message)
-	end
-end
-
-function CircleMeMaster:AddCircle( message ) -- Add the Circle To The List
-  -- Loop Through List Names
-  -- If The Name Exists, return
-  -- If The name Doesn't Exist, add it 
-  Print("Got a message to [ "..message.action.." ] a circle. Should be Add.")
-end 
-
-function CircleMeMaster:RemoveCircle( message ) -- Remove Circle From The List
-	-- Loop Through List Names 
-	-- If The Name Exists, Delete It 
-	-- If Not, return
-	 Print("Got a message to [ "..message.action.." ] a circle. Should be Remove.")
-end 
-
-function CircleMeMaster:OnICCommMessageReceived(channel, strMessage, idMessage)
-	local message = JSON.decode(strMessage)
-
-	if type(message) ~= "table" then
-		return
-	end
-
-	if not self.global then
-		return
-	end
-
-	self:OnGlobalMessage(message)
-end
-
-function CircleMeMaster:HideChannel(id)
-    if not aChatLog then
-        return
-    end
-
-    if not aChatLog.tChatWindows then
-        return
-    end
-
-	for key, wnd in pairs(aChatLog.tChatWindows) do
-    	local tData = wnd:GetData()
-
-    	if tData.tViewedChannels and tData.tViewedChannels[id] then
-    		tData.tViewedChannels[id] = false
-
-    		aChatLog:HelperRemoveChannelFromAll(id)
-    	end
-    end
-end
-
-function CircleMeMaster:OnChannelMessageReceive(channel, strMessage, idMessage)
-	if channel ~= self.global then return end 
-	if strMessage ~= nil then 
-		--Print("Message received: ".. strMessage)
-	end
-	
-end
-
-function CircleMeMaster:Send(tMessage,isTable)
-	local strMsg = JSON.encode(tMessage)
-	if isTable == true then
-		if string.len(tostring(strMsg)) > 450 then
-		   	--self:SendSplitMessage(tMessage,isTable)
-			self.global:Send(tostring(strMsg))
-		else
-			self.global:Send(tostring(strMsg))
-		end
-	end 
-end 
 
 function CircleMeMaster:DoCircleAnnounce()
 	Print("Circle Announce")
@@ -245,9 +130,43 @@ function CircleMeMaster:DoCircleAnnounce()
 		self.global:Post(tMessage)
 	end 
 end 
+
+-----------------------------------------------------------------------------------------------
+-- CircleMeMaster Channel Functions
+-----------------------------------------------------------------------------------------------
+
+function CircleMeMaster:Connect_Global()
+	-- Joins the Global Broadcast/Receiving Channel for Announcements
+	if self.myTimer ~= nil then self.myTimer:Stop() end 
+	
+	if self.CMMGlobal then
+		return 
+	end 
+
+	self.CMMGlobal = ICCommLib.JoinChannel("CircleMeMaster",ICCommLib.CodeEnumICCommChannelType.Global)
+	if not self.CMMGlobal then
+		Print("CMMGlobal Not Created, rejoining in 1 second...")
+		self.myTimer:Start()
+		return 
+	end 
+	--self.CMMGlobal.IsReady()
+	-- we have connected, so lets set up the functions
+	self.CMMGlobal:SetJoinResultFunction("OnGlobalChannelJoin", self)
+	self.CMMGlobal:SetReceivedMessageFunction("OnGlobalMessageReceived", self) 
+	self.CMMGlobal:SendMessage("Testing")
+end 
+
+function CircleMeMaster:OnGlobalChannelJoin()
+	Print("[CMM] - We have joined the channel")
+end 
+
+function CircleMeMaster:OnGlobalMessageReceived(channel, strMessage, strSender)
+	Print("[CMM] - We recieved a message from [ ".. strSender .." ]")
+end 
 -----------------------------------------------------------------------------------------------
 -- CircleMeMaster Functions
 -----------------------------------------------------------------------------------------------
+
 -- Define general functions here
 function CircleMeMaster:OnGuildMemberChange( guildCurr )
 	guildCurr:RequestMembers() -- this is used to reload the list on changes
@@ -348,24 +267,6 @@ function CircleMeMaster:Build()
     self:LeaveAllChannels()
     self:Connect()
 	self:JoinGlobalChannel()
-end
-
-function CircleMeMaster:LeaveAllChannels()
-    for idx, channelCurrent in ipairs(ChatSystemLib.GetChannels()) do
-        if string.find(channelCurrent:GetName(),"CircleMeMaster") then
-            channelCurrent:Leave()
-        end
-    end
-end
-
-function CircleMeMaster:Extend(...)
-    local args = {...}
-    for i = 2, #args do
-        for key, value in pairs(args[i]) do
-            args[1][key] = value
-        end
-    end
-    return args[1]
 end
 
 function CircleMeMaster:OnListToggleClick( wndHandler, wndControl, eMouseButton )
