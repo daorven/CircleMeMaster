@@ -15,7 +15,19 @@ require "ChatChannelLib"
 -- CircleMeMaster Module Definition
 -----------------------------------------------------------------------------------------------
 local CircleMeMaster = {} 
-local JSON = Apollo.GetPackage("Lib:dkJSON-2.5").tPackage
+
+local dbEntryDefault = { 
+	name  = "",
+	entryType = 1, -- GuildLib.GuildType_Circle or GuildLib.GuildType_Guild
+	announce = true,
+	pvp   = true,
+	pve   = true,
+	rp    = true,
+	other = true,
+	desc  = ""
+	}
+	
+--local JSON = Apollo.GetPackage("Lib:dkJSON-2.5").tPackage
 -----------------------------------------------------------------------------------------------
 -- Constants
 -----------------------------------------------------------------------------------------------
@@ -56,18 +68,12 @@ function CircleMeMaster:OnSave(eType)
     if eType ~= GameLib.CodeEnumAddonSaveLevel.Character then
         return
     end
-
-    return 1
+	return self.dbMasterStorage
 end
 
 function CircleMeMaster:OnRestore(eType, tSavedData)
-    if eType ~= GameLib.CodeEnumAddonSaveLevel.Character then
-        return
-    end
 
-    if tSavedData ~= nil and tSavedData ~= "" then
-        
-    end
+	self.dbMasterStorage = tSavedData
 end
 -----------------------------------------------------------------------------------------------
 -- CircleMeMaster OnDocLoaded
@@ -80,13 +86,8 @@ function CircleMeMaster:OnDocLoaded()
 			Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
 			return
 		end
-		self.circleList = {}
-		self.circleAnnounceList = {}
-		self.tCircleListDB = {}
 	    self.wndMain:Show(false, true)
-		self.wndMain:FindChild("MainFormInner"):FindChild("ListWindow"):Show(false, true)
-		self.wndMain:FindChild("circleConfigWindow"):Show(false, true)
-		
+		self.wndItemList = self.wndMain:FindChild("MainFormInner"):FindChild("Grid")
 		-- if the xmlDoc is no longer needed, you should set it to nil
 		-- self.xmlDoc = nil
 		
@@ -101,34 +102,51 @@ function CircleMeMaster:OnDocLoaded()
 		Apollo.RegisterEventHandler("ReceivedMessageEvent","OnGlobalMessageReceived",self)
 		self.myTimer = ApolloTimer.Create(1, false, "Connect_Global", self) -- Rejoin if it cannot join channel
 		self.myTimer:Start()
-		
-		for _,guild in ipairs(GuildLib.GetGuilds()) do
-			guild:RequestMembers()
-		end
-
+		if self.dbMasterStorage == nil then
+			self.dbMasterStorage = {}
+		end 
 		-- Do additional Addon initialization here
 	end
 end
 
 
 function CircleMeMaster:DoCircleAnnounce()
-	Print("Circle Announce")
-	for _,v in ipairs(self.circleAnnounceList) do
-		--TODO: Get Description and Role by circle according to value of 'v'
-		--local tempData = GetDataForCircle(v)
-		local role = "1,2,3,4" --tempData[1]
-		local desc = "Test Description" --tempData[2]
-		local tMessage = {
-			action = "insert",
-			channel = v,
-			pvp = true,
-			pve = false,
-			rp = false,
-			other = false,
-			description = desc,
-		}
-		self.global:Post(tMessage)
+
+end 
+
+function CircleMeMaster:OnListCircleCheck( wndHandler, wndControl, eMouseButton )
+	--local cName = wndHandler:FindChild("circleName"):GetText()
+
+	
+end
+
+function CircleMeMaster:StoreDBValue( dbName, sName, eType, bPvp, bPve, bRP, bOther, sDesc, bAnnounce )
+	local tTemp = {
+		name  = sName,
+		entryType = eType,
+		announce = bAnnounce,
+		pvp   = bPvp,
+		pve   = bPve,
+		rp    = bRP,
+		other = bOther,
+		desc  = sDesc,
+	}
+	table.insert( dbName, tTemp )
+end 
+
+function CircleMeMaster:CircleExists( sName, del ) -- Return Results: 0 = false, 1 = true, 2 = deleted
+	for idx, val in ipairs( self.dbMasterStorage ) do 
+		Print("[CMM] Looking for (( "..sName..")) DB Entry is (( "..val.name.." ))")
+		if val.name == sName then 
+			if del == true then 
+				-- we wish to delete this index
+				table.remove( self.dbMasterStorage[idx] )
+				return 2
+			end 
+			return 1 
+		end 
 	end 
+	return 0
 end 
 
 -----------------------------------------------------------------------------------------------
@@ -153,15 +171,22 @@ function CircleMeMaster:Connect_Global()
 	-- we have connected, so lets set up the functions
 	self.CMMGlobal:SetJoinResultFunction("OnGlobalChannelJoin", self)
 	self.CMMGlobal:SetReceivedMessageFunction("OnGlobalMessageReceived", self) 
-	self.CMMGlobal:SendMessage("Testing")
 end 
 
 function CircleMeMaster:OnGlobalChannelJoin()
-	Print("[CMM] - We have joined the channel")
+	for _,v in pairs( self.dbMasterStorage ) do
+		-- Send Message For Each Entry in DB
+		self:SendMessage( { action = "insert", payload = v } )
+	end 
 end 
 
 function CircleMeMaster:OnGlobalMessageReceived(channel, strMessage, strSender)
-	Print("[CMM] - We recieved a message from [ ".. strSender .." ]")
+	if strMessage.action == "insert" then 
+		if self:CircleExists( strMessage.payload.name ) == 1 then return end 
+		table.insert(self.dbMasterStorage, payload )
+	elseif strMessage.action == "remove" then 
+		self:CircleExists( strMessage.payload.name, true )
+	end
 end 
 -----------------------------------------------------------------------------------------------
 -- CircleMeMaster Functions
@@ -175,56 +200,41 @@ end
 function CircleMeMaster:OnGuildRoster(guildCurr, strName, nRank, eResult) -- Event from CPP
 	if guildCurr == nil then 
 		return 
-	end 
-	if guildCurr:GetType() ~= GuildLib.GuildType_Circle then
-		return
 	end
-	for _,v in pairs(self.circleList) do
-		if v == guildCurr:GetName() then
-			--Print("Already Added To Circle List "..#self.circleList)
-			return
+	if guildCurr:GetType() == 3 then return end 
+	if guildCurr:GetType() == 4 then return end 
+	for _,v in pairs( self.dbMasterStorage ) do 
+		 if v.name == guildCurr:GetName() then 
+			 --Print("[CMM] - Name (( "..v.name.." )) Exists Already")
+			 -- Already Exists
+			 return 
 		end
-	end
-	table.insert(self.circleList, guildCurr:GetName())
-end
-
-function CircleMeMaster:OnTimer()
-	if self.tWndList == nil then return end 
-	-- Get List of Checked Circles
-	for _,v in ipairs(self.tWndList:GetChildren()) do 
-		curChild = v:FindChild("circleName")
-		curChildChk = v:FindChild("chkListCircle")
-		--Print("Child: " .. curChild:GetText())
-		if curChildChk:IsChecked() then 
-			--Print("We Will Announce This Circle")
-			if #self.circleAnnounceList > 0 then 
-				for _,k in pairs(self.circleAnnounceList) do
-					if k == v:FindChild("circleName"):GetText() then
-						--Print("Already Added To Circle Announce List [ "..#self.circleList.." ]")
-					else 
-						--Print("Added "..curChild:GetText().." to Announce List")
-						table.insert(self.circleAnnounceList,curChild:GetText())				
-					end
-				end
-			else
-				--Print("List Empty, Added: " .. curChild:GetText().." to Announce List")
-				table.insert(self.circleAnnounceList,curChild:GetText())
-			end
-		end 
 	end 
-	
-	
-end 
+		-- doesn't exist, enter in with defaults
+		--   pre-enter 3 important settings for editing later on
+		--Print("[CMM] - Adding Entry (( "..guildCurr:GetName().." ))")
+		local tTempData = {
+			name = guildCurr:GetName(),
+			announce = false,
+			entryType = guildCurr:GetType(),
+			pvp   = true,
+			pve   = true,
+			rp    = true,
+			other = true,
+			desc  = ""
+		}
+		table.insert(self.dbMasterStorage, tTempData)
+		tTempData = nil
+end
 
 -- on SlashCommand "/cmm"
 function CircleMeMaster:OnCircleMeMasterOn(sCmd,sArg)
 	if sArg == "" then 
 		self.wndMain:Show(true)
+		Event_FireGenericEvent("SendVarToRover", "db", self.dbMasterStorage)
 	end 
 	
-	-- List The Circles
-	self:ListCircles()
-	
+	-- List The Circles	
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -235,30 +245,48 @@ function CircleMeMaster:OnCloseCMM( wndHandler, wndControl, eMouseButton )
 	self.wndMain:Show(false)
 end
 
-function CircleMeMaster:ListCircles()
-	-- Set a var for the window we'll be working with
-	self.tWndList = self.wndMain:FindChild("MainFormInner"):FindChild("cList")
-	-- Clear Existing List
-	--self.tWndList:DestroyChildren()
-	-- Populate by how many are in our Circle List Table
-	--Print("Circles To Add: [ "..#self.circleList.." ]")
-	for i=1,#self.circleList do 
-		--Print("Working with: "..self.circleList[i])
-		curWnd = Apollo.LoadForm(self.xmlDoc, "CircleEntry", self.tWndList, self)
-		curChildCfgBtn = curWnd:FindChild("btnCfg")
-		curChildCfgBtn:SetData( { ["name"] = self.circleList[i] } )
-		curWnd:Show(true)
-		
-		if curWnd == nil then 
-			--Print("Could Not Load Circle Entry")
-			return 
-		end 
-		curWnd:FindChild("circleName"):SetText(self.circleList[i])
-		
+function CircleMeMaster:OnGuildButtonClick( wndHandler, wndControl, eMouseButton )
+	self:PopulateListByType( GuildLib.GuildType_Guild, false )
+	--Print("[CMM] - Generating List by type (( Guild ))")
+end
+
+function CircleMeMaster:OnCircleButtonClick( wndHandler, wndControl, eMouseButton )
+	self:PopulateListByType( GuildLib.GuildType_Circle, false )
+	--Print("[CMM] - Generating List by type (( Circle ))")
+end
+
+function CircleMeMaster:PopulateListByType( eType, bOwner ) -- goes through a db and adds a row to a list
+	if self.wndItemList == nil then
+		Print("[CMM] - Grid Not Found, Aborting...")
+		return 
 	end 
-	--self.tWndList:ArrangeChildrenVert()
+	for _,guild in ipairs(GuildLib.GetGuilds()) do
+		guild:RequestMembers()
+	end
+	self.wndItemList:DeleteAll()
+	for _, val in pairs(self.dbMasterStorage) do 
+		if val.entryType == eType then 
+			self:AddListItem( val, bOwner )
+		end 
+	end 
 	
-end 	
+end 
+
+function CircleMeMaster:AddListItem( val, bOwner )
+	local iCurrRow = self.wndItemList:AddRow("")
+	self.wndItemList:SetCellLuaData(iCurrRow, 1, val)
+	self.wndItemList:SetCellText( iCurrRow, 1, string.format("%s",val.name) )
+	--self.wndItemList:SetCellText(iCurrRow, 2, tCurr.title)
+	--self.wndItemList:SetCellText(iCurrRow, 3, string.format("%s, %s",tCurr.location[1],tCurr.location[2]))
+	--self.wndItemList:SetCellText(iCurrRow, 4, tCurr.host)
+end 
+
+function CircleMeMaster:OnListItemSelected(wndControl, wndHandler, iRow, iCol,iCurrRow, iCurrCol)
+	--Print(iRow)
+	self.nSelectedEntry = iRow or self.nSelectedEntry
+	self:SetToolTip()
+end
+
 function CircleMeMaster:OnCharacterCreated()
 	self:Build()
 end
@@ -275,9 +303,19 @@ function CircleMeMaster:OnListToggleClick( wndHandler, wndControl, eMouseButton 
 end
 
 function CircleMeMaster:OnSaveCircleCfgClick( wndHandler, wndControl, eMouseButton )
+	local curWnd = self.wndMain:FindChild("circleConfigWindow")
+	local sCircleName = curWnd:FindChild("cNameWnd"):FindChild("txtCName"):GetText()
+	self.tCircleListDB[sCircleName] = {
+		["pvp"] = curWnd:FindChild("PvP"):IsChecked(),
+		["pve"] = curWnd:FindChild("PvE"):IsChecked(),
+		["rp"] = curWnd:FindChild("RP"):IsChecked(),
+		["other"] = curWnd:FindChild("Other"):IsChecked(),
+		["description"] = curWnd:FindChild("cfgDesc"):GetText(),
+		}
 	self.wndMain:FindChild("circleConfigWindow"):Show(false)
-	-- TODO Save Data To DB :O
+	
 end
+
 
 ---------------------------------------------------------------------------------------------------
 -- CircleEntry Functions
@@ -317,7 +355,7 @@ function CircleMeMaster:UpdateCfg( sCircleName, data )
 			["pve"] = false,
 			["rp"] = false,
 			["other"] = false,
-			["description"] = "Circle Description",
+			["description"] = "",
 			}
 	else
 		-- existing entry so assign it.
