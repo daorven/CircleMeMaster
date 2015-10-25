@@ -182,8 +182,6 @@ end
 
 function LUI_Holdem:Send(tMessage)
 	local strMsg = JSON.encode(tMessage)
-
-	if isTable == true then
 		if self.game.conn == "ICComm" then
 			if not self.gamecom then
 				self:ConnectToHost()
