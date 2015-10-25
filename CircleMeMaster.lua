@@ -176,11 +176,25 @@ end
 function CircleMeMaster:OnGlobalChannelJoin()
 	for _,v in pairs( self.dbMasterStorage ) do
 		-- Send Message For Each Entry in DB
-		self:SendMessage( { action = "insert", payload = v } )
+		self:Send( { action = "insert", payload = v } )
 	end 
 end 
 
+function LUI_Holdem:Send(tMessage)
+	local strMsg = JSON.encode(tMessage)
+
+	if isTable == true then
+		if self.game.conn == "ICComm" then
+			if not self.gamecom then
+				self:ConnectToHost()
+		    end
+
+		    self.gamecom:SendMessage(tostring(strMsg))
+		end
+end
+
 function CircleMeMaster:OnGlobalMessageReceived(channel, strMessage, strSender)
+	local strMessage = JSON.decode(strMessage)
 	if strMessage.action == "insert" then 
 		if self:CircleExists( strMessage.payload.name ) == 1 then return end 
 		table.insert(self.dbMasterStorage, payload )
