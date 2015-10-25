@@ -180,15 +180,9 @@ function CircleMeMaster:OnGlobalChannelJoin()
 	end 
 end 
 
-function LUI_Holdem:Send(tMessage)
+function CircleMeMaster:Send(tMessage)
 	local strMsg = JSON.encode(tMessage)
-		if self.game.conn == "ICComm" then
-			if not self.gamecom then
-				self:ConnectToHost()
-		    end
-
-		    self.gamecom:SendMessage(tostring(strMsg))
-		end
+	self.gamecom:SendMessage(tostring(strMsg))
 end
 
 function CircleMeMaster:OnGlobalMessageReceived(channel, strMessage, strSender)
