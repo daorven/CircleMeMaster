@@ -27,7 +27,7 @@ local dbEntryDefault = {
 	desc  = ""
 	}
 	
---local JSON = Apollo.GetPackage("Lib:dkJSON-2.5").tPackage
+local JSON = Apollo.GetPackage("Lib:dkJSON-2.5").tPackage
 -----------------------------------------------------------------------------------------------
 -- Constants
 -----------------------------------------------------------------------------------------------

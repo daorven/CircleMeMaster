@@ -2,4 +2,5 @@
 <Addon Author="Kardall" APIVersion="11" Name="CircleMeMaster" Description="Circle Finder - For People Who RUN A Circle">
     <Script Name="CircleMeMaster.lua"/>
     <Form Name="CircleMeMaster.xml"/>
+    <Script Name="libs\LibJSON\LibJSON-2.5.lua"/>
 </Addon>
